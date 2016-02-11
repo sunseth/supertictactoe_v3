@@ -1,0 +1,338 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>SuperTicTacToe</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+      body {
+        background-color: #000000;
+        margin: 0px;
+        overflow: hidden;
+      }
+
+    </style>
+  </head>
+  <body>
+
+    <script src="../build/three.min.js"></script>
+    <script src="../build/Tween.js"></script>
+    <script src="js/geometries/hilbert3D.js"></script>
+    <script src="js/Detector.js"></script>
+
+    <script>
+
+      if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
+
+      var mouse, raycaster;
+      var objects = [], clicked = [], objectsByBoard = [[[],[],[]],[[],[],[]],[[],[],[]]];
+      var basePositions, displacements, boardToLine, selectedLines = [], lines = [], board = [];
+
+      var mouseX = 0, mouseY = 0,
+
+      windowHalfX = window.innerWidth / 2,
+      windowHalfY = window.innerHeight / 2,
+
+      camera, scene, renderer,
+
+      player = 1, colors = [{r: 0, g: 153, b: 76}, {r: 204, g: 0, b: 0}, {r: 255, g:255, b:255}, {r: 0, g:0, b:0}], nextMove = null, victor = null;
+
+      var win = [[null, null, null], [null, null, null], [null, null, null]];
+
+      init();
+      animate();
+
+      function init() {
+
+        var i, container;
+
+        container = document.createElement( 'div' );
+        document.body.appendChild( container );
+
+        camera = new THREE.PerspectiveCamera( 33, window.innerWidth / window.innerHeight, 1, 10000 );
+        camera.position.z = 800;
+
+        scene = new THREE.Scene();
+
+        renderer = new THREE.WebGLRenderer({antialias: true});
+        renderer.setPixelRatio( window.devicePixelRatio );
+        renderer.setSize( window.innerWidth, window.innerHeight );
+        container.appendChild( renderer.domElement );
+
+        var geometry = new THREE.Geometry(),
+          points = hilbert3D( new THREE.Vector3( 0,0,0 ), 200.0, 3, 0, 1, 2, 3, 4, 5, 6, 7 );
+
+        for ( i = 0; i < points.length; i ++ ) {
+
+          geometry.vertices.push( points[i] );
+
+        }
+
+
+        // lines
+
+        var line, p, scale = 0.15, d = 45, c1 = 0x000000, base = 150, g1 = geometry, parameters = [], m1, position, coordinates, meshDescription = { color: c1, opacity: 1, blending: THREE.AdditiveBlending, transparent: true }, fadeTime;
+
+        basePositions = [[-base, base, 0], [0, base, 0], [base, base, 0], [-base, 0, 0], [0, 0, 0], [base, 0, 0], [-base, -base, 0], [0, -base, 0], [base, -base, 0]];
+        displacements = [[-d, d, 0], [0, d, 0], [d, d, 0], [-d, 0, 0], [0, 0, 0], [d, 0, 0],
+                            [-d, -d, 0], [0, -d, 0], [d, -d, 0]];
+        for (let i = 0; i < 9; i++) {
+          for (let j = 0; j < 9; j++){
+            m1 = new THREE.LineBasicMaterial( meshDescription );
+            position = positionTransform(basePositions[i], displacements[j]);
+            coordinates = [Math.floor(i/3), i%3, Math.floor(j/3), j%3];
+            parameters.push([m1, scale*0.5, position, g1, coordinates]);
+          }
+        }
+
+        for ( i = 0; i < parameters.length; i ++ ) {
+
+          p = parameters[ i ];
+
+          line = new THREE.Line( p[ 3 ],  p[ 0 ] );
+          line.scale.x = line.scale.y = line.scale.z =  p[ 1 ];
+
+          line.position.x = p[ 2 ][ 0 ];
+          line.position.y = p[ 2 ][ 1 ];
+          line.position.z = p[ 2 ][ 2 ];
+          line.coordinates = p[4];
+          objects.push(line);
+          objectsByBoard[p[4][0]][p[4][1]].push(line);
+          fadeTime = (Math.random() * 2000) + 1500;
+          new TWEEN.Tween(line.material.color).delay(1000).to({r: 0.6, g: 0.6, b:0.6}, fadeTime).easing(TWEEN.Easing.Quadratic.In).start();
+
+          scene.add( line );
+
+        }
+
+        var outerRow, innerBoard;
+        for (var i = 0; i < 3; i++) {
+          outerRow = [];
+          for (var j = 0; j < 3; j++) {
+            innerBoard = [];
+            for (var k = 0; k < 3; k++){
+              innerBoard.push([null, null, null]);
+            }
+            outerRow.push(innerBoard);
+          }
+          board.push(outerRow);
+        }
+
+        var lineLength = 150, orientation, basePoint, stepX, stepY, gridLine;
+        var linePositions = [[[-225, 75], [-225, -75]], [[-75, 225], [75, 225]]];
+
+        for (let i = 0; i < 2; i++) {
+          orientation = linePositions[i];
+          for (let j = 0; j < 2; j++) {
+            basePoint = orientation[j];
+            stepX = i ? 0 : lineLength;
+            stepY = i ? -lineLength : 0;
+            for (let k = 0; k < 3; k++) {
+              let lineGeo = new THREE.Geometry();
+              lineGeo.vertices.push(new THREE.Vector3(basePoint[0], basePoint[1], 0),
+                           new THREE.Vector3(basePoint[0] + stepX, basePoint[1] + stepY, 0));
+              basePoint[i] += stepX + stepY;
+              let lineMaterial = new THREE.LineBasicMaterial({
+                  color: 0x000000,
+                  linewidth: 2
+              });
+              gridLine = new THREE.Line(lineGeo, lineMaterial);
+              fadeTime = (Math.random() * 5000) + 2000;
+              new TWEEN.Tween(gridLine.material.color).to(colors[2], fadeTime).easing(TWEEN.Easing.Cubic.In).start();
+              lines.push(gridLine);
+              scene.add(gridLine);
+            }
+          }
+        }
+
+        boardToLine = [
+          [[0, 6],[6, 1, 9],[9, 2]],
+          [[0, 7, 3],[1, 7, 10, 4],[2, 10, 5]],
+          [[3, 8],[8, 4, 11],[5, 11]]
+        ];
+
+        mouse = new THREE.Vector2();
+        raycaster = new THREE.Raycaster();
+
+        window.addEventListener( 'resize', onWindowResize, false );
+        window.addEventListener( 'mousedown', onDocumentMouseDown, false );
+      }
+
+      function onWindowResize() {
+
+        windowHalfX = window.innerWidth / 2;
+        windowHalfY = window.innerHeight / 2;
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize( window.innerWidth, window.innerHeight );
+
+      }
+
+      function onDocumentMouseDown(event) {
+        event.preventDefault();
+        mouse.x = ( event.clientX / renderer.domElement.clientWidth ) * 2 - 1;
+        mouse.y = - ( event.clientY / renderer.domElement.clientHeight ) * 2 + 1;
+
+        raycaster.setFromCamera( mouse, camera );
+
+        var intersects = raycaster.intersectObjects( objects );
+        if ( intersects.length > 0 ) {
+          var object = intersects[0].object;
+          var coordinates = object.coordinates;
+          if (!victor){
+            if (correctBoard(nextMove, coordinates)){
+              if (!check(board, coordinates)) {
+                clicked.push(object);
+                new TWEEN.Tween(intersects[0].object.material.color).to( getColor(player), 1000).easing(TWEEN.Easing.Quartic.In).start();
+                mark(board, coordinates, player);
+                player = (1 - (player - 1)) + 1;
+              }
+            }
+          }
+        }
+      }
+
+      function animate() {
+        requestAnimationFrame( animate );
+        render();
+        TWEEN.update();
+      }
+
+      function render() {
+        camera.lookAt( scene.position );
+
+        for ( var i = 0; i < clicked.length; i ++ ) {
+
+          var object = clicked[ i ];
+          object.rotation.y += 0.05;
+
+        }
+
+        renderer.render( scene, camera );
+
+      }
+
+      function positionTransform(position, displacement) {
+        var transformed = [];
+        for (var i = 0; i < position.length; i++){
+          transformed[i] = position[i] + displacement[i];
+        }
+
+        return transformed;
+      }
+
+      function getColor(player) {
+        return player - 1 ? colors[0] : colors[1];
+      }
+
+      function getOtherColor(player) {
+        return player - 1 ? colors[1] : colors[0];
+      }
+
+      function check(board, coordinates) {
+        return board[coordinates[0]][coordinates[1]][coordinates[2]][coordinates[3]];
+      }
+
+      function mark(board, coordinates, player) {
+        board[coordinates[0]][coordinates[1]][coordinates[2]][coordinates[3]] = player;
+        boardWin(board, coordinates, player);
+        nextMove = win[coordinates[2]][coordinates[3]] ? null : [coordinates[2], coordinates[3]];
+
+        var targetLines = nextMove ? boardToLine[nextMove[0]][nextMove[1]] : boardToLine[coordinates[2]][coordinates[3]], color = getOtherColor(player);
+        for (var i = 0; i < lines.length; i++) {
+          lines[i].material.color.setHex(0xffffff);
+        }
+        if (nextMove) {
+          for (var i = 0; i < targetLines.length; i++) {
+            new TWEEN.Tween(lines[targetLines[i]].material.color).to(color, 750).easing(TWEEN.Easing.Quartic.In).start();
+          }
+        } else {
+          for (var i = 0; i < lines.length; i++) {
+            if (targetLines.indexOf(i) == -1) {
+              new TWEEN.Tween(lines[i].material.color).to(color, 750).easing(TWEEN.Easing.Quartic.In).start();
+            }
+          }
+        }
+      }
+
+      function correctBoard(move, coordinates) {
+        return (nextMove === null || (move[0] == coordinates[0] && move[1] == coordinates[1]))
+                && !(win[coordinates[0]][coordinates[1]]);
+      }
+
+      function boardWin(board, coordinates, player) {
+        var innerBoard = board[coordinates[0]][coordinates[1]];
+        var wonBoard = checkBoard(innerBoard, player);
+
+        if (wonBoard) {
+          win[coordinates[0]][coordinates[1]] = player;
+
+          var tween, last, current, boardObjects, middle;
+          boardObjects = objectsByBoard[coordinates[0]][coordinates[1]];
+          middle = Math.floor(boardObjects.length/2)
+          tween = new TWEEN.Tween(boardObjects[0].material.color).to(colors[3], 200).onComplete(function(){ scene.remove(boardObjects[0]) });
+
+          last = tween;
+          for (let i = 1; i < boardObjects.length; i++) {
+            if (i == middle) continue
+            current = new TWEEN.Tween(boardObjects[i].material.color).to(colors[3], 200).onComplete(function(){ scene.remove(boardObjects[i]) });
+            last.chain(current);
+            last = current;
+          }
+          last.onComplete(function(){
+            scene.remove(boardObjects[boardObjects.length - 1]);
+            var middleScale = boardObjects[middle].scale;
+            var cubezilla = new TWEEN.Tween(middleScale).to(
+              {x: middleScale.x * 2,
+               y: middleScale.y * 2,
+               z: middleScale.z * 2}, 1000).onComplete(function(){gameWin(player)});
+            console.log(getColor(player));
+            var colorCorrect = new TWEEN.Tween(boardObjects[middle].material.color).to(getColor(player), 100).chain(cubezilla).start();
+          });
+          tween.start();
+        }
+      }
+
+      function gameWin(player) {
+        var wonGame = checkBoard(win, player);
+        if (wonGame) {
+          console.log(player + " wins!");
+          alert(1 - player ? "Blue Wins!" : "Red Wins!");
+          victor = player;
+        }
+      }
+
+      function checkBoard(board, player) {
+        var count;
+        for (var i = 0; i < 3; i++){
+          count = 0;
+          for (var j = 0; j < 3; j++){
+            if (board[i][j] == player) count++;
+          }
+          if (count == 3) {
+            return true;
+          }
+        }
+        for (var i = 0; i < 3; i++){
+          count = 0;
+          for (var j = 0; j < 3; j++){
+            if (board[j][i] == player) count++;
+          }
+          if (count == 3) {
+            return true;
+          }
+        }
+
+        if (player == board[0][0] && player == board[1][1] && player == board[2][2]){
+          return true;
+        }
+
+        return (player == board[2][0] && player == board[1][1] && player == board[0][2])
+      }
+
+    </script>
+  </body>
+</html>
